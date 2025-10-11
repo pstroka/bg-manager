@@ -44,6 +44,9 @@ features = [
     "wgpu",
 ]
 
+[dependencies.cosmic-bg-config]
+git = "https://github.com/pop-os/cosmic-bg"
+
 # Uncomment to test a locally-cloned libcosmic
 # [patch.'https://github.com/pop-os/libcosmic']
 # libcosmic = { path = "../libcosmic" }
