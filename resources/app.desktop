@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Background Manager
+Comment=Background manager for the COSMIC™ desktop
+Type=Application
+Icon=com.github.pstroka.BackgroundManager
+Exec=bg-manager %F
+Terminal=false
+StartupNotify=true
+Categories=COSMIC
+Keywords=COSMIC
+MimeType=
