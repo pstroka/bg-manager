@@ -41,8 +41,6 @@ features = [
     "winit",
     # Add Wayland support to winit
     "wayland",
-    # GPU-accelerated rendering
-    "wgpu",
 ]
 
 [dependencies.cosmic-bg-config]
