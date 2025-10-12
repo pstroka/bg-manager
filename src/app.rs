@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0
 
-use crate::config::Config;
+use crate::config::{BgConfig, Config};
 use crate::fl;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::cosmic_theme::{ThemeMode, THEME_MODE_ID};
@@ -8,9 +8,7 @@ use cosmic::iced::{window::Id, Limits, Subscription};
 use cosmic::iced_winit::commands::popup::{destroy_popup, get_popup};
 use cosmic::prelude::*;
 use cosmic::widget;
-use cosmic_bg_config::state::State;
-use cosmic_bg_config::{context, Config as BgConfig};
-use futures_util::SinkExt;
+use cosmic_bg_config::context;
 
 /// The application model stores app-specific state used to describe its interface and
 /// drive its logic.
@@ -30,9 +28,8 @@ pub struct AppModel {
 pub enum Message {
     TogglePopup,
     PopupClosed(Id),
-    SubscriptionChannel,
     UpdateConfig(Config),
-    UpdateState(State),
+    UpdateBgConfig(BgConfig),
     UpdateThemeMode(ThemeMode),
     Toggle(bool),
 }
@@ -67,8 +64,8 @@ impl cosmic::Application for AppModel {
         // Construct the app model with the runtime's core.
         let app = AppModel {
             core,
-            config_handler: cosmic_config::Config::new(Self::APP_ID, Config::VERSION).ok(),
-            config: cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
+            config_handler: Config::config().ok(),
+            config: Config::config()
                 .map(|context| match Config::get_entry(&context) {
                     Ok(config) => config,
                     Err((_errors, config)) => {
@@ -120,18 +117,7 @@ impl cosmic::Application for AppModel {
     /// emit messages to the application through a channel. They are started at the
     /// beginning of the application, and persist through its lifetime.
     fn subscription(&self) -> Subscription<Self::Message> {
-        struct MySubscription;
-
         Subscription::batch(vec![
-            // Create a subscription which emits updates through a channel.
-            Subscription::run_with_id(
-                std::any::TypeId::of::<MySubscription>(),
-                cosmic::iced::stream::channel(4, move |mut channel| async move {
-                    _ = channel.send(Message::SubscriptionChannel).await;
-
-                    futures_util::future::pending().await
-                }),
-            ),
             // Watch for application configuration changes.
             self.core()
                 .watch_config::<Config>(Self::APP_ID)
@@ -145,10 +131,10 @@ impl cosmic::Application for AppModel {
             self.core()
                 .watch_config::<ThemeMode>(THEME_MODE_ID)
                 .map(|update| Message::UpdateThemeMode(update.config)),
-            // FIXME: doesn't work
+            // TODO: watch all outputs
             self.core()
-                .watch_state::<State>(cosmic_bg_config::NAME)
-                .map(|update| Message::UpdateState(update.config)),
+                .watch_config::<BgConfig>(cosmic_bg_config::NAME)
+                .map(|update| Message::UpdateBgConfig(update.config)),
         ])
     }
 
@@ -158,11 +144,9 @@ impl cosmic::Application for AppModel {
     /// on the application's async runtime.
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         match message {
-            Message::SubscriptionChannel => {
-                // For example purposes only.
-            }
             Message::UpdateConfig(config) => {
                 self.config = config;
+                return self.update(Message::UpdateThemeMode(self.core.system_theme_mode()));
             }
             Message::Toggle(toggled) => {
                 self.config
@@ -197,38 +181,23 @@ impl cosmic::Application for AppModel {
             }
             Message::UpdateThemeMode(theme_mode) => {
                 if self.config.enabled {
-                    let mut bg_config = BgConfig::load(&context().unwrap()).unwrap();
-                    let state = if theme_mode.is_dark {
-                        &self.config.dark
-                    } else {
-                        &self.config.light
-                    };
-                    let mut default = bg_config.default_background.clone();
-                    default.source = state.0.clone();
-                    bg_config.set_entry(&context().unwrap(), default).unwrap();
-                    state.1.wallpapers.iter().for_each(|(output, source)| {
-                        if let Some(entry) = bg_config.entry(output) {
-                            let mut entry = entry.clone();
-                            entry.source = source.clone();
-                            bg_config.set_entry(&context().unwrap(), entry).unwrap();
-                        }
-                    });
+                    self.config
+                        .update_bg(theme_mode.is_dark, &context().unwrap());
                 }
             }
-            Message::UpdateState(state) => {
-                let default = BgConfig::load(&context().unwrap())
-                    .unwrap()
-                    .default_background
-                    .source;
-                if self.core.system_theme_mode().is_dark {
-                    self.config
-                        .set_dark(self.config_handler.as_ref().unwrap(), (default, state))
-                        .unwrap();
-                } else {
-                    self.config
-                        .set_light(self.config_handler.as_ref().unwrap(), (default, state))
-                        .unwrap();
-                }
+            Message::UpdateBgConfig(_config) => {
+                // println!("{config:?}");
+                // self.config.set_entry(
+                //     self.core.system_theme_mode().is_dark,
+                //     config.all,
+                //     self.config_handler.as_ref().unwrap(),
+                // );
+                // TODO: don't trigger on mode update and don't load the while config
+                self.config.load(
+                    self.core.system_theme_mode().is_dark,
+                    &context().unwrap(),
+                    self.config_handler.as_ref().unwrap(),
+                );
             }
         }
         Task::none()

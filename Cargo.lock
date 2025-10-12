@@ -588,6 +588,7 @@ dependencies = [
  "libcosmic",
  "open",
  "rust-embed",
+ "serde",
  "tokio",
  "vergen",
 ]
