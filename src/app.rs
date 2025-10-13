@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0
 
-use crate::config::{BgConfig, Config};
+use crate::config::{Bg, Config};
 use crate::fl;
 use cosmic::applet::token::subscription::{
     activation_token_subscription, TokenRequest, TokenUpdate,
@@ -33,9 +33,9 @@ pub struct AppModel {
 pub enum Message {
     TogglePopup,
     PopupClosed(Id),
-    UpdateConfig(Config),
-    UpdateBgConfig(BgConfig),
-    UpdateThemeMode(ThemeMode),
+    ConfigUpdate(Config),
+    BgUpdate(Bg),
+    ThemeModeUpdate(ThemeMode),
     Toggle(bool),
     OpenSettings(bool),
     Token(TokenUpdate),
@@ -108,6 +108,7 @@ impl cosmic::Application for AppModel {
 
     fn view_window(&self, _id: Id) -> Element<'_, Self::Message> {
         let content_list = widget::list_column()
+            // .list_item_padding([8, 0, 8, 0])
             .padding([8, 0, 8, 0])
             .add(widget::settings::item(
                 fl!("switcher-text"),
@@ -115,10 +116,12 @@ impl cosmic::Application for AppModel {
             ))
             .add(
                 cosmic::applet::menu_button(widget::text(fl!("settings-dark")))
+                    .padding([8, 0, 8, 0])
                     .on_press(Message::OpenSettings(true)),
             )
             .add(
                 cosmic::applet::menu_button(widget::text(fl!("settings-light")))
+                    .padding([8, 0, 8, 0])
                     .on_press(Message::OpenSettings(false)),
             );
 
@@ -141,15 +144,14 @@ impl cosmic::Application for AppModel {
                     //     tracing::error!(?why, "app config error");
                     // }
 
-                    Message::UpdateConfig(update.config)
+                    Message::ConfigUpdate(update.config)
                 }),
             self.core()
                 .watch_config::<ThemeMode>(THEME_MODE_ID)
-                .map(|update| Message::UpdateThemeMode(update.config)),
-            // TODO: watch all outputs
+                .map(|update| Message::ThemeModeUpdate(update.config)),
             self.core()
-                .watch_config::<BgConfig>(cosmic_bg_config::NAME)
-                .map(|update| Message::UpdateBgConfig(update.config)),
+                .watch_config::<Bg>(cosmic_bg_config::NAME)
+                .map(|update| Message::BgUpdate(update.config)),
         ])
     }
 
@@ -159,9 +161,9 @@ impl cosmic::Application for AppModel {
     /// on the application's async runtime.
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         match message {
-            Message::UpdateConfig(config) => {
+            Message::ConfigUpdate(config) => {
                 self.config = config;
-                return self.update(Message::UpdateThemeMode(self.core.system_theme_mode()));
+                return self.update(Message::ThemeModeUpdate(self.core.system_theme_mode()));
             }
             Message::Toggle(toggled) => {
                 self.config
@@ -189,25 +191,26 @@ impl cosmic::Application for AppModel {
                     self.popup = None;
                 }
             }
-            Message::UpdateThemeMode(theme_mode) => {
+            Message::ThemeModeUpdate(theme_mode) => {
                 if self.config.enabled {
                     self.config
                         .update_bg(theme_mode.is_dark, &context().unwrap());
                 }
             }
-            Message::UpdateBgConfig(_config) => {
-                // println!("{config:?}");
-                // self.config.set_entry(
-                //     self.core.system_theme_mode().is_dark,
-                //     config.all,
-                //     self.config_handler.as_ref().unwrap(),
-                // );
-                // TODO: don't trigger on mode update and don't load the while config
-                self.config.load(
-                    self.core.system_theme_mode().is_dark,
-                    &context().unwrap(),
-                    self.config_handler.as_ref().unwrap(),
-                );
+            Message::BgUpdate(config) => {
+                if config.entries.is_empty() {
+                    return Task::none();
+                }
+                let is_dark = self.core.system_theme_mode().is_dark;
+                if is_dark && config.entries != self.config.dark {
+                    self.config
+                        .set_dark(self.config_handler.as_ref().unwrap(), config.entries)
+                        .unwrap();
+                } else if !is_dark && config.entries != self.config.light {
+                    self.config
+                        .set_light(self.config_handler.as_ref().unwrap(), config.entries)
+                        .unwrap();
+                }
             }
             Message::OpenSettings(is_dark) => {
                 self.core

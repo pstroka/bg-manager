@@ -4,7 +4,7 @@ use cosmic::{
     cosmic_config::{self, cosmic_config_derive::CosmicConfigEntry, CosmicConfigEntry},
     Application,
 };
-use cosmic_bg_config::{Context, Entry};
+use cosmic_bg_config::{context, Context, Entry};
 
 use crate::app::AppModel;
 
@@ -21,34 +21,6 @@ impl Config {
         cosmic_config::Config::new(AppModel::APP_ID, Config::VERSION)
     }
 
-    pub fn load(&mut self, is_dark: bool, context: &Context, handler: &cosmic_config::Config) {
-        let mut config = cosmic_bg_config::Config::load(context).unwrap();
-        let mut entries = Vec::with_capacity(config.backgrounds.len() + 1);
-        entries.push(config.default_background);
-        entries.append(&mut config.backgrounds);
-        if is_dark {
-            self.set_dark(handler, entries).unwrap();
-        } else {
-            self.set_light(handler, entries).unwrap();
-        }
-    }
-
-    pub fn _set_entry(&mut self, is_dark: bool, entry: Entry, handler: &cosmic_config::Config) {
-        if is_dark {
-            match self.dark.iter().position(|e| e.output == entry.output) {
-                Some(index) => self.dark[index] = entry,
-                _ => self.dark.push(entry),
-            }
-            self.set_dark(handler, self.dark.clone()).unwrap();
-        } else {
-            match self.light.iter().position(|e| e.output == entry.output) {
-                Some(index) => self.light[index] = entry,
-                _ => self.light.push(entry),
-            }
-            self.set_light(handler, self.light.clone()).unwrap();
-        }
-    }
-
     pub fn update_bg(&self, is_dark: bool, context: &Context) {
         let mut config = cosmic_bg_config::Config::load(context).unwrap();
         let entries = if is_dark { &self.dark } else { &self.light };
@@ -58,16 +30,43 @@ impl Config {
     }
 }
 
-#[derive(Debug, Clone, CosmicConfigEntry, PartialEq)]
-#[version = 1]
-pub struct BgConfig {
-    pub all: Entry,
+#[derive(Default, Debug, Clone, PartialEq)]
+pub struct Bg {
+    pub entries: Vec<Entry>,
 }
 
-impl Default for BgConfig {
-    fn default() -> Self {
-        Self {
-            all: Entry::fallback(),
+impl CosmicConfigEntry for Bg {
+    const VERSION: u64 = 1;
+
+    fn write_entry(&self, _config: &cosmic_config::Config) -> Result<(), cosmic_config::Error> {
+        Ok(())
+    }
+
+    fn get_entry(
+        _config: &cosmic_config::Config,
+    ) -> Result<Self, (Vec<cosmic_config::Error>, Self)> {
+        let context = context().unwrap();
+        let mut config = cosmic_bg_config::Config::load(&context).unwrap();
+        let mut entries = Vec::with_capacity(config.backgrounds.len() + 1);
+        entries.push(config.default_background);
+        entries.append(&mut config.backgrounds);
+        Ok(Self { entries })
+    }
+
+    fn update_keys<T: AsRef<str>>(
+        &mut self,
+        config: &cosmic_config::Config,
+        changed_keys: &[T],
+    ) -> (Vec<cosmic_config::Error>, Vec<&'static str>) {
+        if changed_keys
+            .iter()
+            .map(|k| k.as_ref())
+            .any(|k| k == "all" || k.starts_with("output"))
+        {
+            *self = Bg::get_entry(config).unwrap();
+            (vec![], vec![""])
+        } else {
+            (vec![], vec![])
         }
     }
 }
