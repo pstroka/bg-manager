@@ -1,34 +1,64 @@
 // SPDX-License-Identifier: GPL-3.0
 
+use std::path::PathBuf;
+
 use crate::config::{Bg, Config};
 use crate::fl;
+use cosmic::applet::menu_button;
 use cosmic::applet::token::subscription::{
     activation_token_subscription, TokenRequest, TokenUpdate,
 };
 use cosmic::cctk::sctk::reexports::calloop;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
-use cosmic::cosmic_theme::{ThemeMode, THEME_MODE_ID};
+use cosmic::cosmic_theme::{self, Theme, ThemeBuilder, ThemeMode, THEME_MODE_ID};
+use cosmic::iced::{color, Color, Length};
 use cosmic::iced::{window::Id, Subscription};
+use cosmic::iced_widget::row;
 use cosmic::iced_winit::commands::popup::{destroy_popup, get_popup};
+use cosmic::iced_winit::graphics::image::image_rs::Pixel;
 use cosmic::prelude::*;
-use cosmic::widget;
-use cosmic_bg_config::context;
+use cosmic::widget::color_picker::color_button;
+use cosmic::widget::settings::item;
+use cosmic::widget::{self, text, toggler};
+use cosmic_bg_config::{context, Source};
+use cosmic_settings_wallpaper::load_image_with_thumbnail;
 
-/// The application model stores app-specific state used to describe its interface and
-/// drive its logic.
 #[derive(Default)]
 pub struct AppModel {
-    /// Application state which is managed by the COSMIC runtime.
     core: cosmic::Core,
-    /// The popup id.
     popup: Option<Id>,
-    /// Configuration data that persists between application runs.
     config_handler: Option<cosmic_config::Config>,
     config: Config,
     token_tx: Option<calloop::channel::Sender<TokenRequest>>,
+    colors: Vec<Color>,
 }
 
-/// Messages emitted by the application and its widgets.
+impl AppModel {
+    fn update_bg(&mut self, is_dark: bool) {
+        if self.config.enabled {
+            self.config.update_bg(is_dark, &context().unwrap());
+        }
+        let entries = if is_dark {
+            &self.config.dark
+        } else {
+            &self.config.light
+        };
+        // TODO: handle all and per output differently
+        self.colors = entries
+            .first()
+            .map(|e| match e.source.clone() {
+                Source::Path(path_buf) => calculate_color(path_buf),
+                Source::Color(color) => match color {
+                    cosmic_bg_config::Color::Single(color) => vec![color.into()],
+                    cosmic_bg_config::Color::Gradient(gradient) => {
+                        gradient.colors.iter().map(|&color| color.into()).collect()
+                    }
+                },
+            })
+            .unwrap();
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
     TogglePopup,
@@ -38,21 +68,14 @@ pub enum Message {
     ThemeModeUpdate(ThemeMode),
     Toggle(bool),
     OpenSettings(bool),
+    ChangeAccentColor(Color),
     Token(TokenUpdate),
 }
 
-/// Create a COSMIC application from the app model
 impl cosmic::Application for AppModel {
-    /// The async executor that will be used to run your application's commands.
     type Executor = cosmic::executor::Default;
-
-    /// Data that your application receives to its init method.
     type Flags = ();
-
-    /// Messages which the application and its widgets will emit.
     type Message = Message;
-
-    /// Unique identifier in RDNN (reverse domain name notation) format.
     const APP_ID: &'static str = "com.github.pstroka.BackgroundManager";
 
     fn core(&self) -> &cosmic::Core {
@@ -63,12 +86,10 @@ impl cosmic::Application for AppModel {
         &mut self.core
     }
 
-    /// Initializes the application with any given flags and startup commands.
     fn init(
         core: cosmic::Core,
         _flags: Self::Flags,
     ) -> (Self, Task<cosmic::Action<Self::Message>>) {
-        // Construct the app model with the runtime's core.
         let app = AppModel {
             core,
             config_handler: Config::config().ok(),
@@ -94,10 +115,6 @@ impl cosmic::Application for AppModel {
         Some(Message::PopupClosed(id))
     }
 
-    /// Describes the interface based on the current state of the application model.
-    ///
-    /// Application events will be processed through the view. Any messages emitted by
-    /// events received by widgets will be passed to the update method.
     fn view(&self) -> Element<'_, Self::Message> {
         self.core
             .applet
@@ -110,29 +127,36 @@ impl cosmic::Application for AppModel {
         let content_list = widget::list_column()
             // .list_item_padding([8, 0, 8, 0])
             .padding([8, 0, 8, 0])
-            .add(widget::settings::item(
+            .add(item(
                 fl!("switcher-text"),
-                widget::toggler(self.config.enabled).on_toggle(Message::Toggle),
+                toggler(self.config.enabled).on_toggle(Message::Toggle),
             ))
             .add(
-                cosmic::applet::menu_button(widget::text(fl!("settings-dark")))
+                menu_button(text(fl!("settings-dark")))
                     .padding([8, 0, 8, 0])
                     .on_press(Message::OpenSettings(true)),
             )
             .add(
-                cosmic::applet::menu_button(widget::text(fl!("settings-light")))
+                menu_button(text(fl!("settings-light")))
                     .padding([8, 0, 8, 0])
                     .on_press(Message::OpenSettings(false)),
-            );
+            )
+            .add(item(
+                fl!("accent-color"),
+                row(self.colors.iter().map(|color| {
+                    color_button(
+                        Some(Message::ChangeAccentColor(*color)),
+                        Some(*color),
+                        Length::Fill,
+                    )
+                    .into()
+                }))
+                .spacing(8),
+            ));
 
         self.core.applet.popup_container(content_list).into()
     }
 
-    /// Register subscriptions for this application.
-    ///
-    /// Subscriptions are long-running async tasks running in the background which
-    /// emit messages to the application through a channel. They are started at the
-    /// beginning of the application, and persist through its lifetime.
     fn subscription(&self) -> Subscription<Self::Message> {
         Subscription::batch(vec![
             activation_token_subscription(0).map(Message::Token),
@@ -155,15 +179,11 @@ impl cosmic::Application for AppModel {
         ])
     }
 
-    /// Handles messages emitted by the application and its widgets.
-    ///
-    /// Tasks may be returned for asynchronous execution of code in the background
-    /// on the application's async runtime.
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         match message {
             Message::ConfigUpdate(config) => {
                 self.config = config;
-                return self.update(Message::ThemeModeUpdate(self.core.system_theme_mode()));
+                self.update_bg(self.core.system_theme_mode().is_dark);
             }
             Message::Toggle(toggled) => {
                 self.config
@@ -192,10 +212,7 @@ impl cosmic::Application for AppModel {
                 }
             }
             Message::ThemeModeUpdate(theme_mode) => {
-                if self.config.enabled {
-                    self.config
-                        .update_bg(theme_mode.is_dark, &context().unwrap());
-                }
+                self.update_bg(theme_mode.is_dark);
             }
             Message::BgUpdate(config) => {
                 if config.entries.is_empty() {
@@ -241,11 +258,51 @@ impl cosmic::Application for AppModel {
                     tokio::spawn(cosmic::process::spawn(cmd));
                 }
             },
+            Message::ChangeAccentColor(color) => {
+                let (builder_config, theme_config) = if self.core.system_theme_mode().is_dark {
+                    (
+                        ThemeBuilder::dark_config().unwrap(),
+                        Theme::dark_config().unwrap(),
+                    )
+                } else {
+                    (
+                        ThemeBuilder::light_config().unwrap(),
+                        Theme::light_config().unwrap(),
+                    )
+                };
+                let mut builder = ThemeBuilder::get_entry(&builder_config)
+                    .unwrap()
+                    .accent(color.into());
+                builder.window_hint = Some(color.into());
+                builder.write_entry(&builder_config).unwrap();
+                let theme = builder.build();
+                theme.write_entry(&theme_config).unwrap();
+            }
         }
         Task::none()
     }
 
     fn style(&self) -> Option<cosmic::iced_runtime::Appearance> {
         Some(cosmic::applet::style())
+    }
+}
+
+fn calculate_color(path: PathBuf) -> Vec<Color> {
+    if let Some((_, thumbnail, _)) = load_image_with_thumbnail(path) {
+        let pixels = thumbnail
+            .pixels()
+            .flat_map(|p| p.to_rgb().0)
+            .collect::<Vec<_>>();
+        let a = dominant_color::get_colors_with_config(
+            &pixels,
+            false,
+            (thumbnail.width() * thumbnail.height()).into(),
+            0.001,
+        );
+        a.chunks_exact(3)
+            .map(|s| color!(s[0], s[1], s[2]))
+            .collect()
+    } else {
+        vec![]
     }
 }

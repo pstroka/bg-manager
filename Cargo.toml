@@ -16,6 +16,7 @@ open = "5.3.0"
 rust-embed = "8.5.0"
 tokio = { version = "1.41.0", features = ["full"] }
 serde = { version = "1.0.219", features = ["derive"] }
+dominant_color = "0.4.0"
 
 [dependencies.i18n-embed]
 version = "0.15"
@@ -39,6 +40,9 @@ features = [
 
 [dependencies.cosmic-bg-config]
 git = "https://github.com/pop-os/cosmic-bg"
+
+[dependencies.cosmic-settings-wallpaper]
+git = "https://github.com/pop-os/cosmic-settings"
 
 # Uncomment to test a locally-cloned libcosmic
 # [patch.'https://github.com/pop-os/libcosmic']
