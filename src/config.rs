@@ -4,7 +4,7 @@ use cosmic::{
     cosmic_config::{self, cosmic_config_derive::CosmicConfigEntry, CosmicConfigEntry},
     Application,
 };
-use cosmic_bg_config::{context, Context, Entry};
+use cosmic_bg_config::{context, Entry};
 
 use crate::app::AppModel;
 
@@ -19,14 +19,6 @@ pub struct Config {
 impl Config {
     pub fn config() -> Result<cosmic_config::Config, cosmic_config::Error> {
         cosmic_config::Config::new(AppModel::APP_ID, Config::VERSION)
-    }
-
-    pub fn update_bg(&self, is_dark: bool, context: &Context) {
-        let mut config = cosmic_bg_config::Config::load(context).unwrap();
-        let entries = if is_dark { &self.dark } else { &self.light };
-        entries
-            .iter()
-            .for_each(|e| config.set_entry(context, e.clone()).unwrap());
     }
 }
 

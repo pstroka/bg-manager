@@ -4,13 +4,14 @@ use std::path::PathBuf;
 
 use crate::config::{Bg, Config};
 use crate::fl;
+use crate::unique::UniqueIterator;
 use cosmic::applet::menu_button;
 use cosmic::applet::token::subscription::{
     activation_token_subscription, TokenRequest, TokenUpdate,
 };
 use cosmic::cctk::sctk::reexports::calloop;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
-use cosmic::cosmic_theme::{self, Theme, ThemeBuilder, ThemeMode, THEME_MODE_ID};
+use cosmic::cosmic_theme::{Theme, ThemeBuilder, ThemeMode, THEME_MODE_ID};
 use cosmic::iced::{color, Color, Length};
 use cosmic::iced::{window::Id, Subscription};
 use cosmic::iced_widget::row;
@@ -35,18 +36,28 @@ pub struct AppModel {
 
 impl AppModel {
     fn update_bg(&mut self, is_dark: bool) {
+        let context = context().unwrap();
+        let mut config = cosmic_bg_config::Config::load(&context).unwrap();
         if self.config.enabled {
-            self.config.update_bg(is_dark, &context().unwrap());
+            let entries = if is_dark {
+                &self.config.dark
+            } else {
+                &self.config.light
+            };
+            entries
+                .iter()
+                .for_each(|e| config.set_entry(&context, e.clone()).unwrap());
         }
-        let entries = if is_dark {
-            &self.config.dark
+
+        let backgrounds = if config.same_on_all {
+            vec![config.default_background]
         } else {
-            &self.config.light
+            config.backgrounds
         };
-        // TODO: handle all and per output differently
-        self.colors = entries
-            .first()
-            .map(|e| match e.source.clone() {
+
+        self.colors = backgrounds
+            .iter()
+            .flat_map(|e| match e.source.clone() {
                 Source::Path(path_buf) => calculate_color(path_buf),
                 Source::Color(color) => match color {
                     cosmic_bg_config::Color::Single(color) => vec![color.into()],
@@ -55,7 +66,7 @@ impl AppModel {
                     }
                 },
             })
-            .unwrap();
+            .collect_unique();
     }
 }
 
