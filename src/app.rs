@@ -11,6 +11,8 @@ use cosmic::applet::token::subscription::{
 };
 use cosmic::cctk::sctk::reexports::calloop;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
+use cosmic::cosmic_theme::palette::color_difference::Wcag21RelativeContrast;
+use cosmic::cosmic_theme::palette::{Darken, Lighten, Srgb};
 use cosmic::cosmic_theme::{Theme, ThemeBuilder, ThemeMode, THEME_MODE_ID};
 use cosmic::iced::{color, Color, Length};
 use cosmic::iced::{window::Id, Subscription};
@@ -58,9 +60,17 @@ impl AppModel {
         self.colors = backgrounds
             .iter()
             .flat_map(|e| match e.source.clone() {
-                Source::Path(path_buf) => calculate_color(path_buf),
+                Source::Path(path_buf) => dominant_colors(path_buf),
                 Source::Color(color) => match color {
-                    cosmic_bg_config::Color::Single(color) => vec![color.into()],
+                    cosmic_bg_config::Color::Single(color) => {
+                        let color = Srgb::from(color);
+                        let color = if color.relative_luminance().luma > 0.5 {
+                            color.darken(0.5).into()
+                        } else {
+                            color.lighten(0.5).into()
+                        };
+                        vec![color]
+                    }
                     cosmic_bg_config::Color::Gradient(gradient) => {
                         gradient.colors.iter().map(|&color| color.into()).collect()
                     }
@@ -298,7 +308,7 @@ impl cosmic::Application for AppModel {
     }
 }
 
-fn calculate_color(path: PathBuf) -> Vec<Color> {
+fn dominant_colors(path: PathBuf) -> Vec<Color> {
     if let Some((_, thumbnail, _)) = load_image_with_thumbnail(path) {
         let pixels = thumbnail
             .pixels()
