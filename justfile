@@ -23,6 +23,9 @@ icons-dst := clean(rootdir / prefix) / 'share' / 'icons' / 'hicolor'
 icon-svg-src := icons-src / 'scalable' / 'apps' / 'icon.svg'
 icon-svg-dst := icons-dst / 'scalable' / 'apps' / appid + '.svg'
 
+icon-symbolic-svg-src := icons-src / 'scalable' / 'apps' / 'icon-symbolic.svg'
+icon-symbolic-svg-dst := icons-dst / 'scalable' / 'apps' / appid + '-symbolic.svg'
+
 # Default recipe which runs `just build-release`
 default: build-release
 
@@ -64,10 +67,11 @@ install:
     install -Dm0644 resources/app.desktop {{desktop-dst}}
     install -Dm0644 resources/app.metainfo.xml {{appdata-dst}}
     install -Dm0644 {{icon-svg-src}} {{icon-svg-dst}}
+    install -Dm0644 {{icon-symbolic-svg-src}} {{icon-symbolic-svg-dst}}
 
 # Uninstalls installed files
 uninstall:
-    rm {{bin-dst}} {{desktop-dst}} {{icon-svg-dst}}
+    rm {{bin-dst}} {{desktop-dst}} {{icon-svg-dst}} {{icon-symbolic-svg-dst}}
 
 # Vendor dependencies locally
 vendor:

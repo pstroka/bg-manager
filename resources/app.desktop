@@ -1,8 +1,7 @@
 [Desktop Entry]
 Name=Background Manager
-Comment=Background manager for the COSMIC™ desktop
 Type=Application
-Icon=preferences-desktop-wallpaper
+Icon=com.github.pstroka.BackgroundManager
 Exec=bg-manager
 Terminal=false
 StartupNotify=true

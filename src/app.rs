@@ -129,7 +129,7 @@ impl cosmic::Application for AppModel {
     fn view(&self) -> Element<'_, Self::Message> {
         self.core
             .applet
-            .icon_button("display-symbolic")
+            .icon_button("com.github.pstroka.BackgroundManager-symbolic")
             .on_press(Message::TogglePopup)
             .into()
     }
