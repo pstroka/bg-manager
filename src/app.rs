@@ -76,14 +76,16 @@ impl AppModel {
                             .iter()
                             .map(|&color| color.into())
                             .collect::<Vec<_>>();
-                        if let Some(color) = gradient
+                        gradient
                             .colors
-                            .iter()
-                            .map(|&color| Srgb::from(color))
-                            .reduce(|l, r| l.mix(r, 0.5))
-                        {
-                            colors.push(color.into());
-                        }
+                            .windows(2)
+                            .flat_map(|colors| {
+                                colors
+                                    .iter()
+                                    .map(|&color| Srgb::from(color))
+                                    .reduce(|l, r| l.mix(r, 0.5))
+                            })
+                            .for_each(|color| colors.push(color.into()));
                         colors
                     }
                 },
