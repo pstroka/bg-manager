@@ -11,8 +11,7 @@ use cosmic::applet::token::subscription::{
 };
 use cosmic::cctk::sctk::reexports::calloop;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
-use cosmic::cosmic_theme::palette::color_difference::Wcag21RelativeContrast;
-use cosmic::cosmic_theme::palette::{Darken, Lighten, Srgb};
+use cosmic::cosmic_theme::palette::{Darken, Lighten, Mix, Srgb};
 use cosmic::cosmic_theme::{Theme, ThemeBuilder, ThemeMode, THEME_MODE_ID};
 use cosmic::iced::{color, Color, Length};
 use cosmic::iced::{window::Id, Subscription};
@@ -64,15 +63,28 @@ impl AppModel {
                 Source::Color(color) => match color {
                     cosmic_bg_config::Color::Single(color) => {
                         let color = Srgb::from(color);
-                        let color = if color.relative_luminance().luma > 0.5 {
-                            color.darken(0.5).into()
-                        } else {
-                            color.lighten(0.5).into()
-                        };
-                        vec![color]
+                        vec![
+                            color.lighten(0.66).into(),
+                            color.lighten(0.33).into(),
+                            color.darken(0.33).into(),
+                            color.darken(0.66).into(),
+                        ]
                     }
                     cosmic_bg_config::Color::Gradient(gradient) => {
-                        gradient.colors.iter().map(|&color| color.into()).collect()
+                        let mut colors = gradient
+                            .colors
+                            .iter()
+                            .map(|&color| color.into())
+                            .collect::<Vec<_>>();
+                        if let Some(color) = gradient
+                            .colors
+                            .iter()
+                            .map(|&color| Srgb::from(color))
+                            .reduce(|l, r| l.mix(r, 0.5))
+                        {
+                            colors.push(color.into());
+                        }
+                        colors
                     }
                 },
             })
