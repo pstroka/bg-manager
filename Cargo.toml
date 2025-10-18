@@ -26,14 +26,10 @@ features = ["fluent-system", "desktop-requester"]
 git = "https://github.com/pop-os/libcosmic.git"
 # See https://github.com/pop-os/libcosmic/blob/master/Cargo.toml for available features.
 features = [
-    # Applet support
     "applet",
     "applet-token",
-    # On app startup, focuses an existing instance if the app is already open
-    "single-instance",
-    # Uses tokio as the executor for the runtime
+    "dbus-config",
     "tokio",
-    # Add Wayland support to winit
     "wayland",
     "desktop",
 ]

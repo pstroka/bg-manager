@@ -12,7 +12,7 @@ use cosmic::applet::token::subscription::{
 use cosmic::cctk::sctk::reexports::calloop;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::cosmic_theme::palette::{Darken, Lighten, Mix, Srgb};
-use cosmic::cosmic_theme::{Theme, ThemeBuilder, ThemeMode, THEME_MODE_ID};
+use cosmic::cosmic_theme::{Theme, ThemeBuilder, ThemeMode};
 use cosmic::iced::{color, Color, Length};
 use cosmic::iced::{window::Id, Subscription};
 use cosmic::iced_widget::row;
@@ -22,7 +22,7 @@ use cosmic::prelude::*;
 use cosmic::widget::color_picker::color_button;
 use cosmic::widget::settings::item;
 use cosmic::widget::{self, text, toggler};
-use cosmic_bg_config::{context, Source};
+use cosmic_bg_config::{context, Context, Source};
 use cosmic_settings_wallpaper::load_image_with_thumbnail;
 
 #[derive(Default)]
@@ -36,20 +36,22 @@ pub struct AppModel {
 }
 
 impl AppModel {
-    fn update_bg(&mut self, is_dark: bool) {
-        let context = context().unwrap();
-        let mut config = cosmic_bg_config::Config::load(&context).unwrap();
+    fn update_bg(&mut self, is_dark: bool, context: &Context) {
         if self.config.enabled {
             let entries = if is_dark {
                 &self.config.dark
             } else {
                 &self.config.light
             };
+            let mut config = cosmic_bg_config::Config::load(context).unwrap();
             entries
                 .iter()
-                .for_each(|e| config.set_entry(&context, e.clone()).unwrap());
+                .for_each(|e| config.set_entry(context, e.clone()).unwrap());
         }
+    }
 
+    fn update_colors(&mut self, context: &Context) {
+        let config = cosmic_bg_config::Config::load(context).unwrap();
         let backgrounds = if config.same_on_all {
             vec![config.default_background]
         } else {
@@ -100,7 +102,6 @@ pub enum Message {
     PopupClosed(Id),
     ConfigUpdate(Config),
     BgUpdate(Bg),
-    ThemeModeUpdate(ThemeMode),
     Toggle(bool),
     OpenSettings(bool),
     ChangeAccentColor(Color),
@@ -195,7 +196,6 @@ impl cosmic::Application for AppModel {
     fn subscription(&self) -> Subscription<Self::Message> {
         Subscription::batch(vec![
             activation_token_subscription(0).map(Message::Token),
-            // Watch for application configuration changes.
             self.core()
                 .watch_config::<Config>(Self::APP_ID)
                 .map(|update| {
@@ -206,9 +206,6 @@ impl cosmic::Application for AppModel {
                     Message::ConfigUpdate(update.config)
                 }),
             self.core()
-                .watch_config::<ThemeMode>(THEME_MODE_ID)
-                .map(|update| Message::ThemeModeUpdate(update.config)),
-            self.core()
                 .watch_config::<Bg>(cosmic_bg_config::NAME)
                 .map(|update| Message::BgUpdate(update.config)),
         ])
@@ -218,7 +215,6 @@ impl cosmic::Application for AppModel {
         match message {
             Message::ConfigUpdate(config) => {
                 self.config = config;
-                self.update_bg(self.core.system_theme_mode().is_dark);
             }
             Message::Toggle(toggled) => {
                 self.config
@@ -246,13 +242,11 @@ impl cosmic::Application for AppModel {
                     self.popup = None;
                 }
             }
-            Message::ThemeModeUpdate(theme_mode) => {
-                self.update_bg(theme_mode.is_dark);
-            }
             Message::BgUpdate(config) => {
                 if config.entries.is_empty() {
                     return Task::none();
                 }
+                self.update_colors(&context().unwrap());
                 let is_dark = self.core.system_theme_mode().is_dark;
                 if is_dark && config.entries != self.config.dark {
                     self.config
@@ -283,14 +277,17 @@ impl cosmic::Application for AppModel {
                 TokenUpdate::Finished => {
                     self.token_tx = None;
                 }
-                TokenUpdate::ActivationToken { token, .. } => {
-                    let mut cmd = std::process::Command::new("cosmic-settings");
-                    cmd.arg("wallpaper");
-                    if let Some(token) = token {
-                        cmd.env("XDG_ACTIVATION_TOKEN", &token);
-                        cmd.env("DESKTOP_STARTUP_ID", &token);
+                TokenUpdate::ActivationToken { token, exec } => {
+                    let mut exec = exec.split_whitespace();
+                    if let Some(cmd) = exec.next() {
+                        let mut cmd = std::process::Command::new(cmd);
+                        cmd.args(exec);
+                        if let Some(token) = token {
+                            cmd.env("XDG_ACTIVATION_TOKEN", &token);
+                            cmd.env("DESKTOP_STARTUP_ID", &token);
+                        }
+                        tokio::spawn(cosmic::process::spawn(cmd));
                     }
-                    tokio::spawn(cosmic::process::spawn(cmd));
                 }
             },
             Message::ChangeAccentColor(color) => {
@@ -317,8 +314,15 @@ impl cosmic::Application for AppModel {
         Task::none()
     }
 
-    fn style(&self) -> Option<cosmic::iced_runtime::Appearance> {
-        Some(cosmic::applet::style())
+    fn system_theme_mode_update(
+        &mut self,
+        _keys: &[&'static str],
+        new_theme: &cosmic::cosmic_theme::ThemeMode,
+    ) -> Task<cosmic::Action<Self::Message>> {
+        let context = context().unwrap();
+        self.update_bg(new_theme.is_dark, &context);
+        self.update_colors(&context);
+        Task::none()
     }
 }
 
