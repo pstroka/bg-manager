@@ -1,27 +1,29 @@
 // SPDX-License-Identifier: GPL-3.0
 
+use std::borrow::Cow;
 use std::path::PathBuf;
 
 use crate::config::{Bg, Config};
 use crate::fl;
 use crate::unique::UniqueIterator;
-use cosmic::applet::menu_button;
 use cosmic::applet::token::subscription::{
     activation_token_subscription, TokenRequest, TokenUpdate,
 };
+use cosmic::applet::{menu_button, padded_control};
 use cosmic::cctk::sctk::reexports::calloop;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::cosmic_theme::palette::{Darken, Lighten, Mix, Srgb};
 use cosmic::cosmic_theme::{Theme, ThemeBuilder, ThemeMode};
-use cosmic::iced::{color, Color, Length};
+use cosmic::iced::{color, Alignment, Color, Length};
 use cosmic::iced::{window::Id, Subscription};
-use cosmic::iced_widget::row;
+use cosmic::iced_core::text::Wrapping;
+use cosmic::iced_widget::{column, row};
 use cosmic::iced_winit::commands::popup::{destroy_popup, get_popup};
 use cosmic::iced_winit::graphics::image::image_rs::Pixel;
 use cosmic::prelude::*;
 use cosmic::widget::color_picker::color_button;
-use cosmic::widget::settings::item;
-use cosmic::widget::{self, text, toggler};
+use cosmic::widget::settings::item_row;
+use cosmic::widget::{container, divider, text, toggler};
 use cosmic_bg_config::{context, Context, Source};
 use cosmic_settings_wallpaper::load_image_with_thumbnail;
 
@@ -155,29 +157,22 @@ impl cosmic::Application for AppModel {
         self.core
             .applet
             .icon_button("com.github.pstroka.BackgroundManager-symbolic")
-            .on_press(Message::TogglePopup)
+            .on_press_down(Message::TogglePopup)
             .into()
     }
 
     fn view_window(&self, _id: Id) -> Element<'_, Self::Message> {
-        let content_list = widget::list_column()
-            // .list_item_padding([8, 0, 8, 0])
-            .padding([8, 0, 8, 0])
-            .add(item(
+        let content_list = column![
+            padded_item(
                 fl!("switcher-text"),
-                toggler(self.config.enabled).on_toggle(Message::Toggle),
-            ))
-            .add(
-                menu_button(text(fl!("settings-dark")))
-                    .padding([8, 0, 8, 0])
-                    .on_press(Message::OpenSettings(true)),
-            )
-            .add(
-                menu_button(text(fl!("settings-light")))
-                    .padding([8, 0, 8, 0])
-                    .on_press(Message::OpenSettings(false)),
-            )
-            .add(item(
+                toggler(self.config.enabled).on_toggle(Message::Toggle)
+            ),
+            padded_control(divider::horizontal::default()),
+            menu_button(text(fl!("settings-dark"))).on_press(Message::OpenSettings(true)),
+            padded_control(divider::horizontal::default()),
+            menu_button(text(fl!("settings-light"))).on_press(Message::OpenSettings(false)),
+            padded_control(divider::horizontal::default()),
+            padded_item(
                 fl!("accent-color"),
                 row(self.colors.iter().map(|color| {
                     color_button(
@@ -187,8 +182,11 @@ impl cosmic::Application for AppModel {
                     )
                     .into()
                 }))
-                .spacing(8),
-            ));
+                .spacing(8)
+                .wrap()
+            ),
+        ]
+        .padding([8, 0, 8, 0]);
 
         self.core.applet.popup_container(content_list).into()
     }
@@ -314,6 +312,10 @@ impl cosmic::Application for AppModel {
         Task::none()
     }
 
+    fn style(&self) -> Option<cosmic::iced_runtime::Appearance> {
+        Some(cosmic::applet::style())
+    }
+
     fn system_theme_mode_update(
         &mut self,
         _keys: &[&'static str],
@@ -324,6 +326,20 @@ impl cosmic::Application for AppModel {
         self.update_colors(&context);
         Task::none()
     }
+}
+
+fn padded_item<'a, Message: 'static>(
+    title: impl Into<Cow<'a, str>> + 'a,
+    widget: impl Into<Element<'a, Message>> + 'a,
+) -> cosmic::widget::Container<'a, Message, cosmic::Theme> {
+    padded_control(item_row(vec![
+        text(title)
+            .wrapping(Wrapping::Word)
+            .width(Length::Fill)
+            .align_y(Alignment::Center)
+            .into(),
+        container(widget).into(),
+    ]))
 }
 
 fn dominant_colors(path: PathBuf) -> Vec<Color> {
